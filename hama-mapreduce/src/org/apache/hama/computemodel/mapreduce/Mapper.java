@@ -24,6 +24,10 @@ import org.apache.hama.util.KeyValuePair;
 public abstract class Mapper<K1, V1, K2, V2, M> 
   extends Superstep<K1, V1, K2, V2, Writable> {
 
+  public static final String KEY_COMPARATOR_CLASS = "hama.mapreduce.keycompare";
+  public static final String MAPPER_CLASS = "hama.mapreduce.mapclass";
+  public static final String REDUCER_CLASS = "hama.mapreduce.reduceclass";
+  
   Map<Integer, Long> keyDistributionMap = new HashMap<Integer, Long>();
   
   public static class MapperOutputCollector<K1, V1, K2, V2> implements OutputCollector<K2,V2>{
@@ -40,9 +44,17 @@ public abstract class Mapper<K1, V1, K2, V2, M>
     final Serializer<K2> keySerializer;
     final Serializer<V2> valSerializer;
     final CombineOutputCollector<K2, V2> combineCollector;
+    final Configuration jobConf;
     
     public MapperOutputCollector(BSPPeer<K1, V1, K2, V2, Writable> peer) {
       bspPeer = peer;
+      jobConf = peer.getConfiguration();
+      comparator = (RawComparator<K2>) ReflectionUtils.newInstance(
+          jobConf.getClass(KEY_COMPARATOR_CLASS, RawComparator.class), jobConf); 
+      keyClass = (Class<K2>) jobConf.getClass(MAPPER_CLASS, null);
+      valClass = (Class<V2>) jobConf.getClass(REDUCER_CLASS, null);
+      serializationFactory = new SerializationFactory(jobConf);
+      keySerializer = serializationFactory.getSerializer(keyClass);
     }
 
     @Override
