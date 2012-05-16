@@ -26,12 +26,24 @@ public abstract class ReducerKeyDesignator {
 //      
 //    }
     
+    //Assuming non contiguous and minimize communcation
     return new ReducerKeyDesignator(){
 
       @Override
       protected void designateKeysToReducers(int[] keyDistribution,
           long[][] globalKeyDistribution, Configuration conf) {
-        
+          for(int peerNumber = 0; 
+              peerNumber < globalKeyDistribution.length; ++peerNumber){
+            long max = 0L;
+            int maxPartition = -1;
+            for(int i = 0; i < globalKeyDistribution[0].length; ++i){
+              if(max < globalKeyDistribution[peerNumber][i]){
+                maxPartition = i;
+                max = globalKeyDistribution[peerNumber][i];
+              }
+            }
+            keyDistribution[peerNumber] = maxPartition;
+          }
       }
       
     };
