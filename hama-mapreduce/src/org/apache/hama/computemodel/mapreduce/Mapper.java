@@ -3,7 +3,6 @@ package org.apache.hama.computemodel.mapreduce;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -12,11 +11,15 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.logging.Logger;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.io.WritableComparable;
 import org.apache.hadoop.mapred.Partitioner;
 import org.apache.hadoop.mapred.Reducer;
 import org.apache.hadoop.mapred.lib.HashPartitioner;
@@ -27,21 +30,25 @@ import org.apache.hama.bsp.Superstep;
 import org.apache.hama.bsp.sync.SyncException;
 import org.apache.hama.util.KeyValuePair;
 
-public abstract class Mapper<K1, V1, K2 extends Writable, V2 extends Writable>
+public abstract class Mapper<K1, V1, K2 extends WritableComparable<?>, V2 extends Writable>
     extends
-    Superstep<K1, V1, K2, V2, WritableKeyValues<? extends Writable, ? extends Writable>> {
+    Superstep<K1, V1, K2, V2, WritableKeyValues<? extends WritableComparable<?>, ? extends Writable>> {
 
+  public static final Log LOG = LogFactory.getFactory().getLog(Mapper.class);
+  
   public static final String VALUE_COMPARATOR_CLASS = "hama.mapreduce.valuecompare";
   public static final String COMBINER_CLASS = "hama.mapreduce.combiner";
+  public static final String PARTITIONER_CLASS = "hama.mapreduce.keypartitioner";
   public static final String MESSAGE_QUEUE = "MESSAGE_QUEUE";
   public static final String KEY_DIST = "KEY_DISTRIBUTION";
   public static final String COMBINER_FUTURE = "COMBINER_FUTURE";
-  private Map<Integer, Long> keyDistributionMap = new HashMap<Integer, Long>();
   private long[][] globalKeyDistribution;
   private PriorityQueue<WritableKeyValues<K2, V2>> memoryQueue;
-
-  private static class CombineAndSortThread<K2, V2> implements
+  
+  private static class 
+  CombineAndSortThread<K2 extends WritableComparable<?>, V2 extends Writable> implements
       Callable<Integer> {
+      
 
     PriorityQueue<WritableKeyValues<K2, V2>> queue;
     Comparator<V2> valueComparator;
@@ -84,15 +91,19 @@ public abstract class Mapper<K1, V1, K2 extends Writable, V2 extends Writable>
       queue.clear();
       queue.addAll(collector.getCollectedRecords());
       collector.reset();
+      
+      LOG.debug("Completed sorting and combining thread " + queue.size());
+      
       return queue.size();
     }
 
   }
 
-  public static class BSPMapperOutputCollector<K1, V1, K2, V2> implements
+  public static class BSPMapperOutputCollector<K1, V1, 
+  		K2 extends WritableComparable<?>, V2 extends Writable> implements
       OutputCollector<K2, V2> {
 
-    BSPPeer<K1, V1, K2, V2, WritableKeyValues<? extends Writable, ? extends Writable>> bspPeer;
+	BSPPeer<K1, V1, K2, V2, WritableKeyValues<? extends WritableComparable<?>, ? extends Writable>> bspPeer;
     final int partitions;
     final Configuration job;
     PriorityQueue<WritableKeyValues<K2, V2>> collectorQueue;
@@ -103,7 +114,7 @@ public abstract class Mapper<K1, V1, K2 extends Writable, V2 extends Writable>
     // SortedMessageQueue<ByteWritable> sortedQueue;
 
     public BSPMapperOutputCollector(
-        BSPPeer<K1, V1, K2, V2, WritableKeyValues<? extends Writable, ? extends Writable>> peer,
+        BSPPeer<K1, V1, K2, V2, WritableKeyValues<? extends WritableComparable<?>, ? extends Writable>> peer,
         PriorityQueue<WritableKeyValues<K2, V2>> diskQueue,
         long[] peerKeyDistribution) {
       bspPeer = peer;
@@ -111,7 +122,7 @@ public abstract class Mapper<K1, V1, K2 extends Writable, V2 extends Writable>
       this.partitions = peer.getNumPeers();
       this.collectorQueue = diskQueue;
       this.partitioner = (Partitioner<K2, V2>) ReflectionUtils.newInstance(
-          job.getClass("", HashPartitioner.class), job);
+          job.getClass(PARTITIONER_CLASS, HashPartitioner.class), job);
       this.keyDistribution = peerKeyDistribution;
     }
 
@@ -122,6 +133,10 @@ public abstract class Mapper<K1, V1, K2 extends Writable, V2 extends Writable>
       this.collectorQueue.add(keyValPair);
 
       int partition = this.partitioner.getPartition(key, value, partitions);
+      
+      LOG.debug(String.valueOf(key) + " "  + String.valueOf(value) + " " 
+      + partition);
+      
       if (partition >= 0 && partition < keyDistribution.length) {
         keyDistribution[partition] += 1;
       }
@@ -129,7 +144,7 @@ public abstract class Mapper<K1, V1, K2 extends Writable, V2 extends Writable>
 
   }
 
-  private static class CombinerOutputCollector<K, V> implements
+  public static class CombinerOutputCollector<K extends WritableComparable<?>, V extends Writable> implements
       org.apache.hadoop.mapred.OutputCollector<K, V> {
 
     private List<WritableKeyValues<K, V>> collectBuffer = new ArrayList<WritableKeyValues<K, V>>();
@@ -151,8 +166,9 @@ public abstract class Mapper<K1, V1, K2 extends Writable, V2 extends Writable>
 
   @Override
   protected void compute(
-      BSPPeer<K1, V1, K2, V2, WritableKeyValues<? extends Writable, ? extends Writable>> peer)
-      throws IOException {
+  		BSPPeer<K1, V1, K2, V2, 
+  		WritableKeyValues<? extends WritableComparable<?>, ? extends Writable>> peer)
+  		throws IOException {
 
     this.memoryQueue = new PriorityQueue<WritableKeyValues<K2, V2>>();
     int myId = peer.getPeerId();
@@ -162,6 +178,8 @@ public abstract class Mapper<K1, V1, K2 extends Writable, V2 extends Writable>
 
     KeyValuePair<K1, V1> record = null;
     while ((record = peer.readNext()) != null) {
+      LOG.debug("Mapping " + String.valueOf(record.getKey()) + " "
+            + String.valueOf(record.getValue()));
       map(record.getKey(), record.getValue(), collector);
     }
 
@@ -189,17 +207,19 @@ public abstract class Mapper<K1, V1, K2 extends Writable, V2 extends Writable>
 
     String[] peers = peer.getAllPeerNames();
 
-    Iterator<Integer> keyIter = keyDistributionMap.keySet().iterator();
     IntWritable keyPartition = new IntWritable();
     LongWritable value = new LongWritable();
 
     WritableKeyValues<IntWritable, IntWritable> myIdTuple = new WritableKeyValues<IntWritable, IntWritable>(
         new IntWritable(peer.getPeerId()), new IntWritable(-1));
 
-    while (keyIter.hasNext()) {
-      int keyNumber = keyIter.next();
+    int peerId = peer.getPeerId(); 
+    for(int keyNumber = 0; 
+        keyNumber < globalKeyDistribution[0].length; 
+        ++keyNumber){
       keyPartition.set(keyNumber);
-      value.set(keyDistributionMap.get(keyNumber));
+      LOG.debug("partition = " + keyPartition + " count " + globalKeyDistribution[peerId][keyNumber]);
+      value.set(globalKeyDistribution[peerId][keyNumber]);
       myIdTuple.setValue(keyPartition);
       for (String peerName : peers) {
         peer.send(
@@ -209,15 +229,6 @@ public abstract class Mapper<K1, V1, K2 extends Writable, V2 extends Writable>
       }
     }
 
-    try {
-      peer.sync();
-    } catch (SyncException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    } catch (InterruptedException e) {
-      // TODO Auto-generated catch block
-      e.printStackTrace();
-    }
 
     peer.save(MESSAGE_QUEUE, this.memoryQueue);
     peer.save(KEY_DIST, this.globalKeyDistribution);
@@ -225,6 +236,7 @@ public abstract class Mapper<K1, V1, K2 extends Writable, V2 extends Writable>
   }
 
   protected abstract void map(K1 key, V1 value,
-      OutputCollector<K2, V2> collector);
+      OutputCollector<K2, V2> collector) throws IOException;
+
 
 }
