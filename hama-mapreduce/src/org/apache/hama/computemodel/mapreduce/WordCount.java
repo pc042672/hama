@@ -1,3 +1,20 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.apache.hama.computemodel.mapreduce;
 
 import java.io.IOException;
@@ -9,14 +26,18 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.DoubleWritable;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hama.HamaConfiguration;
 import org.apache.hama.bsp.BSPJob;
 import org.apache.hama.bsp.BSPJobClient;
 import org.apache.hama.bsp.ClusterStatus;
+import org.apache.hama.bsp.FileInputFormat;
+import org.apache.hama.bsp.FileOutputFormat;
 import org.apache.hama.bsp.NullInputFormat;
 import org.apache.hama.bsp.OutputCollector;
+import org.apache.hama.bsp.TextInputFormat;
 import org.apache.hama.bsp.TextOutputFormat;
 
 public class WordCount {
@@ -99,20 +120,26 @@ public class WordCount {
     mapRedConfig.setReducerClass(WordCountReducer.class);
     mapRedConfig.configureBSPJob(bsp);
 
-    bsp.setInputFormat(NullInputFormat.class);
+    //bsp.setInputFormat(TextInputFormat.class);
+    bsp.setInputKeyClass(LongWritable.class);
+    bsp.setInputValueClass(Text.class);
     bsp.setOutputKeyClass(Text.class);
-    bsp.setOutputValueClass(DoubleWritable.class);
+    bsp.setOutputValueClass(IntWritable.class);
     bsp.setOutputFormat(TextOutputFormat.class);
-    
+    bsp.setNumBspTask(4);
+    // FileOutputFormat.setOutputPath(bsp, new Path(""));
+
     BSPJobClient jobClient = new BSPJobClient(conf);
     ClusterStatus cluster = jobClient.getClusterStatus(true);
 
     if (args.length > 0) {
       bsp.setInputPath(new Path(args[0]));
       bsp.setOutputPath(new Path(args[1]));
+      //FileInputFormat.addInputPath(bsp, new Path(args[0]));
+      //FileOutputFormat.setOutputPath(bsp, new Path(args[1]));
     } else {
       // Set to maximum
-      throw new IllegalArgumentException("Please enter input and output paths.");
+      throw new IllegalArgumentException(":)");
     }
     long startTime = System.currentTimeMillis();
     if (bsp.waitForCompletion(true)) {
