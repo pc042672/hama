@@ -246,12 +246,6 @@ public abstract class Mapper<K1, V1, K2 extends WritableComparable<?>, V2 extend
                 myIdTuple, value));
       }
     }
-    for (String peerName : peers) {
-      LOG.debug("Sending LongWritable key value");
-      peer.send(peerName, new WritableKeyValues(
-        new LongWritable(1L),
-        new LongWritable(1L)));
-    }
     
     LOG.debug("Now saving for next superstep");
     peer.save(KEY_DIST, this.globalKeyDistribution);
