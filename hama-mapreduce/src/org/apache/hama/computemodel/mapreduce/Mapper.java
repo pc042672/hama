@@ -83,14 +83,13 @@ public abstract class Mapper<K1, V1, K2 extends WritableComparable<?>, V2 extend
 
       WritableKeyValues<K2, V2> previousRecord = null;
 
-      while (recordIterator.hasNext()) {
+      while (!queue.isEmpty()) {
 
-        WritableKeyValues<K2, V2> record = recordIterator.next();
+        WritableKeyValues<K2, V2> record = queue.poll();
         K2 key = record.getKey();
         if (previousRecord != null && combinerInstance != null
             && key.equals(previousRecord.getKey())) {
           previousRecord.addValue(record.getValue());
-          recordIterator.remove();
         } else {
           if (previousRecord != null && combinerInstance != null) {
             previousRecord
@@ -99,12 +98,15 @@ public abstract class Mapper<K1, V1, K2 extends WritableComparable<?>, V2 extend
           previousRecord = record;
         }
       }
-
+      
+      
       queue.clear();
       queue.addAll(collector.getCollectedRecords());
       collector.reset();
 
       LOG.debug("Completed sorting and combining thread " + queue.size());
+      
+      LOG.debug(queue);
 
       return queue.size();
     }
@@ -250,6 +252,7 @@ public abstract class Mapper<K1, V1, K2 extends WritableComparable<?>, V2 extend
     LOG.debug("Now saving for next superstep");
     peer.save(KEY_DIST, this.globalKeyDistribution);
     peer.save(COMBINER_FUTURE, future);
+    peer.save(MESSAGE_QUEUE, this.memoryQueue);
   }
 
   protected abstract void map(K1 key, V1 value,
