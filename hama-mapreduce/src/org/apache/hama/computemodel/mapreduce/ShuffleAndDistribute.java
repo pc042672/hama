@@ -23,6 +23,8 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.PriorityQueue;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
@@ -43,6 +45,8 @@ public class ShuffleAndDistribute<K2 extends WritableComparable<?>, V2 extends W
     extends
     Superstep<NullWritable, NullWritable, K2, V2, WritableKeyValues<? extends WritableComparable<?>, ? extends Writable>> {
 
+  Log LOG = LogFactory.getLog(ShuffleAndDistribute.class);
+  
   // private Map<Long, Long> keyDistributionMap = new HashMap<Long, Long>();
   private long[][] globalKeyDistribution;
   private PriorityQueue<WritableKeyValues<K2, V2>> memoryQueue;
@@ -52,11 +56,7 @@ public class ShuffleAndDistribute<K2 extends WritableComparable<?>, V2 extends W
       BSPPeer<NullWritable, NullWritable, K2, V2, WritableKeyValues<? extends WritableComparable<?>, ? extends Writable>> peer) {
     // TODO Auto-generated method stub
     super.setup(peer);
-    this.memoryQueue = (PriorityQueue<WritableKeyValues<K2, V2>>) peer
-        .getSavedObject(Mapper.MESSAGE_QUEUE);
-
-    this.globalKeyDistribution = (long[][]) peer
-        .getSavedObject(Mapper.KEY_DIST);
+    
   }
 
   protected void designateKeysToReducers(int[] keyDistribution,
@@ -82,7 +82,13 @@ public class ShuffleAndDistribute<K2 extends WritableComparable<?>, V2 extends W
       throws IOException {
     int peerId = peer.getPeerId();
     Configuration conf = peer.getConfiguration();
+    
+    this.memoryQueue = (PriorityQueue<WritableKeyValues<K2, V2>>) peer
+        .getSavedObject(Mapper.MESSAGE_QUEUE);
 
+    this.globalKeyDistribution = (long[][]) peer
+        .getSavedObject(Mapper.KEY_DIST);
+    
     WritableKeyValues<WritableKeyValues<IntWritable, IntWritable>, LongWritable> message;
     while ((message = (WritableKeyValues<WritableKeyValues<IntWritable, IntWritable>, LongWritable>) peer
         .getCurrentMessage()) != null) {
@@ -94,7 +100,7 @@ public class ShuffleAndDistribute<K2 extends WritableComparable<?>, V2 extends W
     int[] keyDistribution = new int[globalKeyDistribution[0].length];
 
     designateKeysToReducers(keyDistribution, globalKeyDistribution, conf);
-
+    
     int myKeyCount = 0;
     for (int i = 0; i < globalKeyDistribution[0].length; ++i) {
       myKeyCount += globalKeyDistribution[peerId][i];
@@ -122,17 +128,5 @@ public class ShuffleAndDistribute<K2 extends WritableComparable<?>, V2 extends W
       }
     }
 
-//    try {
-//      peer.sync();
-//    } catch (SyncException e) {
-//      // TODO Auto-generated catch block
-//      e.printStackTrace();
-//    } catch (InterruptedException e) {
-//      // TODO Auto-generated catch block
-//      e.printStackTrace();
-//    }
   }
-
 }
-// K1 extends WritableComparable<K1>,V1,K2 extends WritableComparable<K2>,V2
-// extends Writable, M extends WritableKeyValues<K2, V2>
