@@ -18,10 +18,14 @@
 package org.apache.hama.computemodel.mapreduce;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
+import java.util.List;
 import java.util.PriorityQueue;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.io.WritableComparable;
@@ -33,6 +37,8 @@ import org.apache.hama.computemodel.mapreduce.Mapper.CombinerOutputCollector;
 
 public abstract class Reducer<K2 extends WritableComparable<?>, V2 extends Writable, K3 extends WritableComparable<?>, V3 extends Writable>
     extends Superstep<K2, V2, K3, V3, WritableKeyValues<K2, V2>> {
+  
+  Log LOG = LogFactory.getLog(Reducer.class);
 
   public static final String REDUCER_CLASS = "hama.mapreduce.reducer";
 
@@ -52,7 +58,8 @@ public abstract class Reducer<K2 extends WritableComparable<?>, V2 extends Writa
       this.memoryQueue.add(message);
     }
 
-    CombinerOutputCollector<K3, V3> outputCollector = new CombinerOutputCollector<K3, V3>();
+    CombinerOutputCollector<K3, V3> outputCollector = 
+        new CombinerOutputCollector<K3, V3>();
     Comparator<V2> valComparator = null;
     Class<?> comparatorClass = conf.getClass(Mapper.VALUE_COMPARATOR_CLASS,
         null);
@@ -60,42 +67,44 @@ public abstract class Reducer<K2 extends WritableComparable<?>, V2 extends Writa
       valComparator = (Comparator<V2>) ReflectionUtils.newInstance(
           comparatorClass, conf);
     }
-
-    Iterator<WritableKeyValues<K2, V2>> recordIterator = memoryQueue.iterator();
-
+    
     WritableKeyValues<K2, V2> previousRecord = null;
+    
+    List<WritableKeyValues<K2, V2>> list = 
+        new ArrayList<WritableKeyValues<K2,V2>>(memoryQueue.size());
 
-    while (recordIterator.hasNext()) {
+    while (!memoryQueue.isEmpty()) {
 
-      WritableKeyValues<K2, V2> record = recordIterator.next();
+      WritableKeyValues<K2, V2> record = memoryQueue.poll();
       K2 key = record.getKey();
       if (previousRecord != null && key.equals(previousRecord.getKey())) {
         previousRecord.addValues(record.getValues());
-        recordIterator.remove();
       } else {
         if (previousRecord != null) {
           previousRecord.sortValues(valComparator);
+          list.add(previousRecord);
         }
         previousRecord = record;
       }
     }
 
-    // if(reducer != null){
-    Iterator<WritableKeyValues<K2, V2>> recordIter = this.memoryQueue
-        .iterator();
+    Iterator<WritableKeyValues<K2, V2>> recordIter = list.iterator();
     while (recordIter.hasNext()) {
       WritableKeyValues<K2, V2> record = recordIter.next();
       Iterator<V2> valIterator = record.getValues().iterator();
       reduce(record.getKey(), valIterator, outputCollector);
     }
 
+    LOG.debug("In reduder " + outputCollector
+        .getCollectedRecords());
+    
     Iterator<WritableKeyValues<K3, V3>> outputIter = outputCollector
         .getCollectedRecords().iterator();
     while (outputIter.hasNext()) {
       WritableKeyValues<K3, V3> output = outputIter.next();
       peer.write(output.getKey(), output.getValue());
     }
-    // }
+    
   }
 
   public abstract void reduce(K2 key, Iterator<V2> values,
