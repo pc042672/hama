@@ -104,10 +104,6 @@ public abstract class Mapper<K1, V1, K2 extends WritableComparable<?>, V2 extend
       queue.addAll(collector.getCollectedRecords());
       collector.reset();
 
-      LOG.debug("Completed sorting and combining thread " + queue.size());
-      
-      LOG.debug(queue);
-
       return queue.size();
     }
 
@@ -134,10 +130,10 @@ public abstract class Mapper<K1, V1, K2 extends WritableComparable<?>, V2 extend
       this.job = peer.getConfiguration();
       this.partitions = peer.getNumPeers();
       this.collectorQueue = diskQueue;
-      LOG.debug("creating partitioner");
+
       this.partitioner = (Partitioner<K2, V2>) ReflectionUtils.newInstance(
           job.getClass(PARTITIONER_CLASS, HashPartitioner.class), job);
-      LOG.debug("got partitioner");
+
       this.keyDistribution = peerKeyDistribution;
     }
 
@@ -148,9 +144,6 @@ public abstract class Mapper<K1, V1, K2 extends WritableComparable<?>, V2 extend
       this.collectorQueue.add(keyValPair);
 
       int partition = this.partitioner.getPartition(key, value, partitions);
-
-      LOG.debug(String.valueOf(key) + " " + String.valueOf(value) + " "
-          + partition);
 
       if (partition >= 0 && partition < keyDistribution.length) {
         keyDistribution[partition] += 1;
@@ -186,21 +179,13 @@ public abstract class Mapper<K1, V1, K2 extends WritableComparable<?>, V2 extend
 
     this.memoryQueue = new PriorityQueue<WritableKeyValues<K2, V2>>();
     this.globalKeyDistribution = new long[peer.getNumPeers()][peer.getNumPeers()];
-    LOG.debug("initialized memory queue");
     
     int myId = peer.getPeerId();
-    
-    LOG.debug("My Id = " + myId);
-
     OutputCollector<K2, V2> collector = new BSPMapperOutputCollector<K1, V1, K2, V2>(
         peer, memoryQueue, globalKeyDistribution[myId]);
 
-    LOG.debug("initialized op collector");
-    
     KeyValuePair<K1, V1> record = null;
     while ((record = peer.readNext()) != null) {
-      LOG.debug("Mapping " + String.valueOf(record.getKey()) + " "
-          + String.valueOf(record.getValue()));
       map(record.getKey(), record.getValue(), collector);
     }
 
@@ -237,8 +222,6 @@ public abstract class Mapper<K1, V1, K2 extends WritableComparable<?>, V2 extend
     int peerId = peer.getPeerId();
     for (int keyNumber = 0; keyNumber < globalKeyDistribution[0].length; ++keyNumber) {
       keyPartition.set(keyNumber);
-      LOG.debug("partition = " + keyPartition + " count "
-          + globalKeyDistribution[peerId][keyNumber]);
       value.set(globalKeyDistribution[peerId][keyNumber]);
       myIdTuple.setValue(keyPartition);
       for (String peerName : peers) {
@@ -248,8 +231,6 @@ public abstract class Mapper<K1, V1, K2 extends WritableComparable<?>, V2 extend
                 myIdTuple, value));
       }
     }
-    
-    LOG.debug("Now saving for next superstep");
     peer.save(KEY_DIST, this.globalKeyDistribution);
     peer.save(COMBINER_FUTURE, future);
     peer.save(MESSAGE_QUEUE, this.memoryQueue);
